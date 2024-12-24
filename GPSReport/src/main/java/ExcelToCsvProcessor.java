@@ -1,47 +1,73 @@
-import java.io.*;
-import java.util.*;
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileReader;
+import java.io.FileWriter;
+import java.util.ArrayList;
+import java.util.List;
 
 public class ExcelToCsvProcessor {
 
     public static void main(String[] args) {
-        String inputFilePath = "5-9-11-9.csv"; // Path to the input CSV file
-        String outputFilePath = "output.csv"; // Path to save the resulting CSV
+        if (args.length == 0) {
+            System.out.println("Please provide the folder path as a command-line argument.");
+            return;
+        }
 
-        try (BufferedReader reader = new BufferedReader(new FileReader(inputFilePath));
-             FileWriter writer = new FileWriter(outputFilePath)) {
+        String folderPath = args[0];
+        File folder = new File(folderPath);
 
-            String line;
-            boolean isFirstLine = true;
+        if (!folder.isDirectory()) {
+            System.out.println("The provided path is not a directory.");
+            return;
+        }
 
-            while ((line = reader.readLine()) != null) {
-                String[] columns = line.split(";"); // Assuming semicolon-delimited input
+        File[] files = folder.listFiles((dir, name) -> name.endsWith(".csv"));
+        if (files == null || files.length == 0) {
+            System.out.println("No CSV files found in the provided directory.");
+            return;
+        }
 
-                // Handle header row
-                if (isFirstLine) {
-                    writer.append("No.;Position time;Lat;Lon\n");
-                    isFirstLine = false;
-                    continue;
-                }
+        for (File file : files) {
+            String inputFilePath = file.getAbsolutePath();
+            String outputFilePath = file.getParent() + File.separator + "processed_" + file.getName();
 
-                // Process only the first four columns (No., Position time, Lat, Lon)
-                List<String> processedColumns = new ArrayList<>();
-                for (int i = 0; i < columns.length && i <= 3; i++) {
-                    String value = columns[i].trim();
-                    if (i == 2 || i == 3) { // Lat or Lon column
-                        value = insertDecimalAfterTwoDigits(value);
+            try (BufferedReader reader = new BufferedReader(new FileReader(inputFilePath));
+                 FileWriter writer = new FileWriter(outputFilePath)) {
+
+                String line;
+                boolean isFirstLine = true;
+
+                while ((line = reader.readLine()) != null) {
+                    String[] columns = line.split(";"); // Assuming semicolon-delimited input
+
+                    // Handle header row
+                    if (isFirstLine) {
+                        writer.append("No.;Position time;Lat;Lon\n");
+                        isFirstLine = false;
+                        continue;
                     }
-                    processedColumns.add(value);
+
+                    // Process only the first four columns (No., Position time, Lat, Lon)
+                    List<String> processedColumns = new ArrayList<>();
+                    for (int i = 0; i < columns.length && i <= 3; i++) {
+                        String value = columns[i].trim();
+                        if (i == 2 || i == 3) { // Lat or Lon column
+                            value = insertDecimalAfterTwoDigits(value);
+                        }
+                        processedColumns.add(value);
+                    }
+
+                    // Write processed columns to the output CSV with ";" delimiter
+                    writer.append(String.join(";", processedColumns));
+                    writer.append("\n");
                 }
 
-                // Write processed columns to the output CSV with ";" delimiter
-                writer.append(String.join(";", processedColumns));
-                writer.append("\n");
+                System.out.println("Processed: " + inputFilePath + " -> " + outputFilePath);
+
+            } catch (Exception e) {
+                System.err.println("Error processing file: " + inputFilePath);
+                e.printStackTrace();
             }
-
-            System.out.println("CSV file generated at: " + outputFilePath);
-
-        } catch (Exception e) {
-            e.printStackTrace();
         }
     }
 

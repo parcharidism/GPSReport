@@ -44,15 +44,41 @@ public class GPSRouteProcessor {
     }
 
     public static void main(String[] args) throws IOException, InterruptedException {
-        String inputFile = "5-9.csv";
-        String outputHtmlFile = "5-9.html";
+        if (args.length < 1) {
+            System.out.println("Usage: java GPSRouteProcessor <folder_path>");
+            return;
+        }
+
+        String folderPath = args[0];
+        File folder = new File(folderPath);
+
+        if (!folder.isDirectory()) {
+            System.err.println("The specified path is not a directory.");
+            return;
+        }
+
+        // Process each CSV file in the folder
+        File[] files = folder.listFiles((dir, name) -> name.toLowerCase().endsWith(".csv"));
+        if (files == null || files.length == 0) {
+            System.out.println("No CSV files found in the folder.");
+            return;
+        }
+
+        for (File file : files) {
+            System.out.println("Processing file: " + file.getName());
+            processCSVFile(file);
+        }
+    }
+
+    private static void processCSVFile(File csvFile) throws IOException, InterruptedException {
+        String outputHtmlFile = csvFile.getParent() + "/" + csvFile.getName().replace(".csv", "_report.html");
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("d/M/yyyy H:mm");
 
         List<GPSRecord> gpsRecords = new ArrayList<>();
         List<Stop> stops = new ArrayList<>();
 
         // Read GPS data
-        try (BufferedReader br = new BufferedReader(new FileReader(inputFile))) {
+        try (BufferedReader br = new BufferedReader(new FileReader(csvFile))) {
             String line;
             int lineNumber = 0;
 
@@ -69,7 +95,7 @@ public class GPSRouteProcessor {
                     double longitude = Double.parseDouble(parts[3]);
                     gpsRecords.add(new GPSRecord(id, timestamp, latitude, longitude));
                 } catch (Exception e) {
-                    System.err.println("Error processing line " + lineNumber + ": " + line);
+                    System.err.println("Error processing line " + lineNumber + " in file " + csvFile.getName() + ": " + line);
                 }
             }
         }
@@ -86,7 +112,7 @@ public class GPSRouteProcessor {
                 Duration timeDiff = Duration.between(previousRecord.timestamp, currentRecord.timestamp);
                 if (timeDiff.toMinutes() > 10) {
                     if (startPoint != null) {
-                        long timeAtStop = Duration.between(startPoint.timestamp, previousRecord.timestamp).toMinutes();
+                        long timeAtStop = Duration.between(previousRecord.timestamp, startPoint.timestamp).toMinutes();
                         String startPosition = String.format(Locale.US, "%.6f, %.6f", startPoint.latitude, startPoint.longitude);
                         String stopPosition = String.format(Locale.US, "%.6f, %.6f", previousRecord.latitude, previousRecord.longitude);
                         stops.add(new Stop(incrementalNumber++, startPosition, startPoint.timestamp, stopPosition, previousRecord.timestamp, timeAtStop));
@@ -101,40 +127,37 @@ public class GPSRouteProcessor {
         }
 
         if (startPoint != null && previousRecord != null && !startPoint.equals(previousRecord)) {
-            long timeAtStop = Duration.between(startPoint.timestamp, previousRecord.timestamp).toMinutes();
+            long timeAtStop = Duration.between(previousRecord.timestamp, startPoint.timestamp).toMinutes();
             String startPosition = String.format(Locale.US, "%.6f, %.6f", startPoint.latitude, startPoint.longitude);
             String stopPosition = String.format(Locale.US, "%.6f, %.6f", previousRecord.latitude, previousRecord.longitude);
             stops.add(new Stop(incrementalNumber++, startPosition, startPoint.timestamp, stopPosition, previousRecord.timestamp, timeAtStop));
         }
+
+        // Adjust timeAtStop for stops
         for (int i = 0; i < stops.size() - 1; i++) {
             Stop currentStop = stops.get(i);
             Stop nextStop = stops.get(i + 1);
 
-            // Calculate the time passed from the current stopping point to the next starting point
             long timeAtStop = Duration.between(currentStop.stoppingTime, nextStop.startingTime).toMinutes();
-            currentStop.timeAtStop = timeAtStop; // Update the stop's duration
+            currentStop.timeAtStop = timeAtStop;
         }
 
-// Set the last stop's timeAtStop to 0 (no next stop to calculate duration)
         if (!stops.isEmpty()) {
             stops.get(stops.size() - 1).timeAtStop = 0;
         }
 
         // Fetch addresses for stops
         Map<String, String> addressCache = new HashMap<>();
-
         for (Stop stop : stops) {
             String[] startCoords = stop.startPosition.split(", ");
             String[] stopCoords = stop.stopPosition.split(", ");
 
-            // Fetch address for start position if not already cached
             if (!addressCache.containsKey(stop.startPosition)) {
                 String address = getAddress(Double.parseDouble(startCoords[0]), Double.parseDouble(startCoords[1]));
                 addressCache.put(stop.startPosition, address);
                 System.out.println("Start Address: [" + stop.startPosition + "] -> " + address);
             }
 
-            // Fetch address for stop position if not already cached
             if (!addressCache.containsKey(stop.stopPosition)) {
                 String address = getAddress(Double.parseDouble(stopCoords[0]), Double.parseDouble(stopCoords[1]));
                 addressCache.put(stop.stopPosition, address);
@@ -143,8 +166,14 @@ public class GPSRouteProcessor {
         }
 
         // Generate HTML report
-        generateHtmlReport(stops, addressCache, outputHtmlFile);
-        System.out.println("HTML report generated: " + outputHtmlFile);
+        // Extract date range for the report title
+String startDate = gpsRecords.get(0).timestamp.format(DateTimeFormatter.ofPattern("d/M/yyyy"));
+String endDate = gpsRecords.get(gpsRecords.size() - 1).timestamp.format(DateTimeFormatter.ofPattern("d/M/yyyy"));
+
+// Pass the date range to the HTML generation
+generateHtmlReport(stops, addressCache, outputHtmlFile, startDate, endDate);
+
+        System.out.println("Report generated: " + outputHtmlFile);
     }
 
     private static String getAddress(double latitude, double longitude) {
@@ -170,7 +199,6 @@ public class GPSRouteProcessor {
 
             String responseString = response.toString();
 
-            // Extract specific address fields manually
             int roadStart = responseString.indexOf("\"road\":\"") + 8;
             int roadEnd = responseString.indexOf("\"", roadStart);
             String road = (roadStart > 7 && roadEnd > roadStart) ? responseString.substring(roadStart, roadEnd) : "";
@@ -185,7 +213,7 @@ public class GPSRouteProcessor {
 
             address = road + " " + houseNumber + ", " + city;
 
-            Thread.sleep(1500); // Delay to comply with Nominatim's rate limit
+            Thread.sleep(1500);
 
         } catch (Exception e) {
             System.err.println("Error retrieving address: " + e.getMessage());
@@ -193,48 +221,47 @@ public class GPSRouteProcessor {
         return address;
     }
 
-    private static void generateHtmlReport(List<Stop> stops, Map<String, String> addressCache, String outputHtmlFile) {
-        try (BufferedWriter bw = new BufferedWriter(new FileWriter(outputHtmlFile))) {
-            // Define the custom date-time format
-            DateTimeFormatter customFormatter = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
+    private static void generateHtmlReport(List<Stop> stops, Map<String, String> addressCache, String outputHtmlFile, String startDate, String endDate) {
+    try (BufferedWriter bw = new BufferedWriter(new FileWriter(outputHtmlFile))) {
+        DateTimeFormatter customFormatter = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
 
-            bw.write("<!DOCTYPE html>\n");
-            bw.write("<html>\n<head>\n<title>Routes Report</title>\n");
-            bw.write("<style>\n");
-            bw.write("table { width: 100%; border-collapse: collapse; }\n");
-            bw.write("th, td { border: 1px solid black; padding: 8px; text-align: left; }\n");
-            bw.write("th { background-color: #f2f2f2; }\n");
-            bw.write("</style>\n</head>\n<body>\n");
+        // Write the HTML report
+        bw.write("<!DOCTYPE html>\n");
+        bw.write("<html>\n<head>\n<title>Δρομολόγια από " + startDate + " έως " + endDate + "</title>\n");
+        bw.write("<style>\n");
+        bw.write("table { width: 100%; border-collapse: collapse; }\n");
+        bw.write("th, td { border: 1px solid black; padding: 8px; text-align: left; }\n");
+        bw.write("th { background-color: #f2f2f2; }\n");
+        bw.write("</style>\n</head>\n<body>\n");
 
-            bw.write("<h1>Routes Report</h1>\n");
-            bw.write("<table>\n");
-            bw.write("<tr><th>#</th><th>Start Address</th><th>Starting Time</th><th>Stop Address</th><th>Stopping Time</th><th>Time at Stop (minutes)</th></tr>\n");
-            for (Stop stop : stops) {
-                String startAddress = addressCache.getOrDefault(stop.startPosition, "Unknown Address");
-                String stopAddress = addressCache.getOrDefault(stop.stopPosition, "Unknown Address");
+        bw.write("<h1>Δρομολόγια από " + startDate + " έως " + endDate + "</h1>\n");
+        bw.write("<table>\n");
+        bw.write("<tr><th>#</th><th>Start Address</th><th>Starting Time</th><th>Stop Address</th><th>Stopping Time</th><th>Time at Stop (minutes)</th></tr>\n");
+        for (Stop stop : stops) {
+            String startAddress = addressCache.getOrDefault(stop.startPosition, "Unknown Address");
+            String stopAddress = addressCache.getOrDefault(stop.stopPosition, "Unknown Address");
 
-                // Create Google Maps links
-                String startCoords = stop.startPosition.replace(", ", ",");
-                String stopCoords = stop.stopPosition.replace(", ", ",");
+            String startCoords = stop.startPosition.replace(", ", ",");
+            String stopCoords = stop.stopPosition.replace(", ", ",");
 
-                String startLink = "<a href='https://www.google.com/maps?q=" + startCoords + "' target='_blank'>" + startAddress + "</a>";
-                String stopLink = "<a href='https://www.google.com/maps?q=" + stopCoords + "' target='_blank'>" + stopAddress + "</a>";
+            String startLink = "<a href='https://www.google.com/maps?q=" + startCoords + "' target='_blank'>" + startAddress + "</a>";
+            String stopLink = "<a href='https://www.google.com/maps?q=" + stopCoords + "' target='_blank'>" + stopAddress + "</a>";
 
-                bw.write("<tr>\n");
-                bw.write("<td>" + stop.incrementalNumber + "</td>\n");
-                bw.write("<td>" + startLink + "</td>\n");
-                bw.write("<td>" + stop.startingTime.format(customFormatter) + "</td>\n");
-                bw.write("<td>" + stopLink + "</td>\n");
-                bw.write("<td>" + stop.stoppingTime.format(customFormatter) + "</td>\n");
-                bw.write("<td>" + stop.timeAtStop + "</td>\n");
-                bw.write("</tr>\n");
-            }
-            bw.write("</table>\n");
-
-            bw.write("</body>\n</html>");
-        } catch (IOException e) {
-            System.err.println("Error writing the HTML report: " + e.getMessage());
+            bw.write("<tr>\n");
+            bw.write("<td>" + stop.incrementalNumber + "</td>\n");
+            bw.write("<td>" + startLink + "</td>\n");
+            bw.write("<td>" + stop.startingTime.format(customFormatter) + "</td>\n");
+            bw.write("<td>" + stopLink + "</td>\n");
+            bw.write("<td>" + stop.stoppingTime.format(customFormatter) + "</td>\n");
+            bw.write("<td>" + stop.timeAtStop + "</td>\n");
+            bw.write("</tr>\n");
         }
+        bw.write("</table>\n");
+
+        bw.write("</body>\n</html>");
+    } catch (IOException e) {
+        System.err.println("Error writing the HTML report: " + e.getMessage());
     }
+}
 
 }
