@@ -70,7 +70,7 @@ public class GPSRouteProcessor {
         }
     }
 
-    private static void processCSVFile(File csvFile) throws IOException, InterruptedException {
+    public static void processCSVFile(File csvFile) throws IOException, InterruptedException {
         String outputHtmlFile = csvFile.getParent() + "/" + csvFile.getName().replace(".csv", "_report.html");
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("d/M/yyyy H:mm");
 
