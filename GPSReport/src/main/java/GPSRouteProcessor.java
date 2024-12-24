@@ -1,3 +1,4 @@
+
 import java.io.*;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -9,6 +10,7 @@ import java.util.*;
 public class GPSRouteProcessor {
 
     static class GPSRecord {
+
         int id;
         LocalDateTime timestamp;
         double latitude;
@@ -23,6 +25,7 @@ public class GPSRouteProcessor {
     }
 
     static class Stop {
+
         int incrementalNumber;
         String startPosition;
         LocalDateTime startingTime;
@@ -55,7 +58,9 @@ public class GPSRouteProcessor {
 
             while ((line = br.readLine()) != null) {
                 lineNumber++;
-                if (lineNumber == 1) continue; // Skip header
+                if (lineNumber == 1) {
+                    continue; // Skip header
+                }
                 String[] parts = line.split(";");
                 try {
                     int id = Integer.parseInt(parts[0]);
@@ -100,6 +105,19 @@ public class GPSRouteProcessor {
             String startPosition = String.format(Locale.US, "%.6f, %.6f", startPoint.latitude, startPoint.longitude);
             String stopPosition = String.format(Locale.US, "%.6f, %.6f", previousRecord.latitude, previousRecord.longitude);
             stops.add(new Stop(incrementalNumber++, startPosition, startPoint.timestamp, stopPosition, previousRecord.timestamp, timeAtStop));
+        }
+        for (int i = 0; i < stops.size() - 1; i++) {
+            Stop currentStop = stops.get(i);
+            Stop nextStop = stops.get(i + 1);
+
+            // Calculate the time passed from the current stopping point to the next starting point
+            long timeAtStop = Duration.between(currentStop.stoppingTime, nextStop.startingTime).toMinutes();
+            currentStop.timeAtStop = timeAtStop; // Update the stop's duration
+        }
+
+// Set the last stop's timeAtStop to 0 (no next stop to calculate duration)
+        if (!stops.isEmpty()) {
+            stops.get(stops.size() - 1).timeAtStop = 0;
         }
 
         // Fetch addresses for stops
@@ -176,47 +194,47 @@ public class GPSRouteProcessor {
     }
 
     private static void generateHtmlReport(List<Stop> stops, Map<String, String> addressCache, String outputHtmlFile) {
-    try (BufferedWriter bw = new BufferedWriter(new FileWriter(outputHtmlFile))) {
-        // Define the custom date-time format
-        DateTimeFormatter customFormatter = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
+        try (BufferedWriter bw = new BufferedWriter(new FileWriter(outputHtmlFile))) {
+            // Define the custom date-time format
+            DateTimeFormatter customFormatter = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
 
-        bw.write("<!DOCTYPE html>\n");
-        bw.write("<html>\n<head>\n<title>Routes Report</title>\n");
-        bw.write("<style>\n");
-        bw.write("table { width: 100%; border-collapse: collapse; }\n");
-        bw.write("th, td { border: 1px solid black; padding: 8px; text-align: left; }\n");
-        bw.write("th { background-color: #f2f2f2; }\n");
-        bw.write("</style>\n</head>\n<body>\n");
+            bw.write("<!DOCTYPE html>\n");
+            bw.write("<html>\n<head>\n<title>Routes Report</title>\n");
+            bw.write("<style>\n");
+            bw.write("table { width: 100%; border-collapse: collapse; }\n");
+            bw.write("th, td { border: 1px solid black; padding: 8px; text-align: left; }\n");
+            bw.write("th { background-color: #f2f2f2; }\n");
+            bw.write("</style>\n</head>\n<body>\n");
 
-        bw.write("<h1>Routes Report</h1>\n");
-        bw.write("<table>\n");
-        bw.write("<tr><th>#</th><th>Start Address</th><th>Starting Time</th><th>Stop Address</th><th>Stopping Time</th><th>Time at Stop (minutes)</th></tr>\n");
-        for (Stop stop : stops) {
-            String startAddress = addressCache.getOrDefault(stop.startPosition, "Unknown Address");
-            String stopAddress = addressCache.getOrDefault(stop.stopPosition, "Unknown Address");
+            bw.write("<h1>Routes Report</h1>\n");
+            bw.write("<table>\n");
+            bw.write("<tr><th>#</th><th>Start Address</th><th>Starting Time</th><th>Stop Address</th><th>Stopping Time</th><th>Time at Stop (minutes)</th></tr>\n");
+            for (Stop stop : stops) {
+                String startAddress = addressCache.getOrDefault(stop.startPosition, "Unknown Address");
+                String stopAddress = addressCache.getOrDefault(stop.stopPosition, "Unknown Address");
 
-            // Create Google Maps links
-            String startCoords = stop.startPosition.replace(", ", ",");
-            String stopCoords = stop.stopPosition.replace(", ", ",");
+                // Create Google Maps links
+                String startCoords = stop.startPosition.replace(", ", ",");
+                String stopCoords = stop.stopPosition.replace(", ", ",");
 
-            String startLink = "<a href='https://www.google.com/maps?q=" + startCoords + "' target='_blank'>" + startAddress + "</a>";
-            String stopLink = "<a href='https://www.google.com/maps?q=" + stopCoords + "' target='_blank'>" + stopAddress + "</a>";
+                String startLink = "<a href='https://www.google.com/maps?q=" + startCoords + "' target='_blank'>" + startAddress + "</a>";
+                String stopLink = "<a href='https://www.google.com/maps?q=" + stopCoords + "' target='_blank'>" + stopAddress + "</a>";
 
-            bw.write("<tr>\n");
-            bw.write("<td>" + stop.incrementalNumber + "</td>\n");
-            bw.write("<td>" + startLink + "</td>\n");
-            bw.write("<td>" + stop.startingTime.format(customFormatter) + "</td>\n");
-            bw.write("<td>" + stopLink + "</td>\n");
-            bw.write("<td>" + stop.stoppingTime.format(customFormatter) + "</td>\n");
-            bw.write("<td>" + stop.timeAtStop + "</td>\n");
-            bw.write("</tr>\n");
+                bw.write("<tr>\n");
+                bw.write("<td>" + stop.incrementalNumber + "</td>\n");
+                bw.write("<td>" + startLink + "</td>\n");
+                bw.write("<td>" + stop.startingTime.format(customFormatter) + "</td>\n");
+                bw.write("<td>" + stopLink + "</td>\n");
+                bw.write("<td>" + stop.stoppingTime.format(customFormatter) + "</td>\n");
+                bw.write("<td>" + stop.timeAtStop + "</td>\n");
+                bw.write("</tr>\n");
+            }
+            bw.write("</table>\n");
+
+            bw.write("</body>\n</html>");
+        } catch (IOException e) {
+            System.err.println("Error writing the HTML report: " + e.getMessage());
         }
-        bw.write("</table>\n");
-
-        bw.write("</body>\n</html>");
-    } catch (IOException e) {
-        System.err.println("Error writing the HTML report: " + e.getMessage());
     }
-}
 
 }
