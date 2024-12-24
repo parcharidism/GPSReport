@@ -41,8 +41,8 @@ public class GPSRouteProcessor {
     }
 
     public static void main(String[] args) throws IOException, InterruptedException {
-        String inputFile = "1-9-5-9.csv";
-        String outputHtmlFile = "routes_report.html";
+        String inputFile = "5-9.csv";
+        String outputHtmlFile = "5-9.html";
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("d/M/yyyy H:mm");
 
         List<GPSRecord> gpsRecords = new ArrayList<>();
