@@ -1,5 +1,7 @@
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 
 public class Orchestrator {
 
@@ -25,10 +27,6 @@ public class Orchestrator {
         System.out.println("Generating reports...");
         generateReports(folder);
 
-        // Step 3: Clean up intermediate processed files
-        System.out.println("Cleaning up intermediate files...");
-        cleanupProcessedFiles(folder);
-
         System.out.println("Process completed. Only HTML reports remain in the folder.");
     }
 
@@ -40,9 +38,30 @@ public class Orchestrator {
             return;
         }
 
+        // Create a "source_files" folder if it doesn't exist
+        File sourceFilesFolder = new File(folder, "source_files");
+        if (!sourceFilesFolder.exists()) {
+            if (sourceFilesFolder.mkdir()) {
+                System.out.println("Created folder: source_files");
+            } else {
+                System.err.println("Failed to create folder: source_files");
+                return;
+            }
+        }
+
         for (File file : files) {
-            System.out.println("Preprocessing file: " + file.getName());
-            ExcelToCsvProcessor.processCsvFile(file); // Call the method from ExcelToCsvProcessor
+            try {
+                System.out.println("Preprocessing file: " + file.getName());
+                ExcelToCsvProcessor.processCsvFile(file); // Call the method from ExcelToCsvProcessor
+
+                // Move the original source file to the source_files folder
+                File movedFile = new File(sourceFilesFolder, file.getName());
+                Files.move(file.toPath(), movedFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                System.out.println("Moved source file to: " + movedFile.getAbsolutePath());
+
+            } catch (IOException e) {
+                System.err.println("Error preprocessing file: " + file.getName() + ". " + e.getMessage());
+            }
         }
     }
 
@@ -57,26 +76,17 @@ public class Orchestrator {
         for (File file : files) {
             System.out.println("Processing file: " + file.getName());
             try {
-                GPSRouteProcessor.processCSVFile(file); // Call the GPSRouteProcessor class
+                // Generate report using GPSRouteProcessor
+                GPSRouteProcessor.processCSVFile(file);
+
+                // Delete the processed file after successfully generating the report
+                if (file.delete()) {
+                    System.out.println("Deleted: " + file.getName());
+                } else {
+                    System.err.println("Failed to delete: " + file.getName());
+                }
             } catch (IOException | InterruptedException e) {
                 System.err.println("Error processing file: " + file.getName() + ". " + e.getMessage());
-            }
-        }
-    }
-
-    private static void cleanupProcessedFiles(File folder) {
-        File[] files = folder.listFiles((dir, name) -> name.toLowerCase().startsWith("processed_") && name.toLowerCase().endsWith(".csv"));
-
-        if (files == null || files.length == 0) {
-            System.out.println("No processed files to clean up.");
-            return;
-        }
-
-        for (File file : files) {
-            if (file.delete()) {
-                System.out.println("Deleted: " + file.getName());
-            } else {
-                System.err.println("Failed to delete: " + file.getName());
             }
         }
     }
