@@ -17,7 +17,7 @@ public class Orchestrator {
             return;
         }
 
-        // Step 1: Preprocess all CSV files (rename and prepare for processing)
+        // Step 1: Preprocess all CSV files
         System.out.println("Preprocessing CSV files...");
         preprocessCSVFiles(folder);
 
@@ -41,12 +41,8 @@ public class Orchestrator {
         }
 
         for (File file : files) {
-            File processedFile = new File(file.getParent(), "processed_" + file.getName());
-            if (file.renameTo(processedFile)) {
-                System.out.println("Renamed: " + file.getName() + " -> " + processedFile.getName());
-            } else {
-                System.err.println("Failed to rename: " + file.getName());
-            }
+            System.out.println("Preprocessing file: " + file.getName());
+            ExcelToCsvProcessor.processCsvFile(file); // Call the method from ExcelToCsvProcessor
         }
     }
 
@@ -61,7 +57,7 @@ public class Orchestrator {
         for (File file : files) {
             System.out.println("Processing file: " + file.getName());
             try {
-                GPSRouteProcessor.processCSVFile(file); // Call the first Java class
+                GPSRouteProcessor.processCSVFile(file); // Call the GPSRouteProcessor class
             } catch (IOException | InterruptedException e) {
                 System.err.println("Error processing file: " + file.getName() + ". " + e.getMessage());
             }
